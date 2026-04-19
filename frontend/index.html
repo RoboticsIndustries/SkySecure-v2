@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SkySecure V2 — Live Aircraft & Spoof Detection</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#fff;--bg2:#f8f9fa;--border:#e5e7eb;--text:#111827;--text2:#6b7280;--accent:#ef4444;--font:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex;flex-direction:column}
+
+/* Header */
+.hdr{padding:18px 32px 0;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg)}
+.hdr h1{font-size:24px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:12px}
+.tabs{display:flex}
+.tab{padding:10px 20px;font-size:14px;font-weight:500;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* Tab content */
+.tc{display:none;flex:1;overflow:hidden;flex-direction:column}
+.tc.active{display:flex}
+
+/* Banner */
+.banner{margin:12px 32px 0;padding:10px 16px;border-radius:6px;font-size:14px;font-weight:500;flex-shrink:0}
+.banner.green{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
+.banner.yellow{background:#fefce8;color:#854d0e;border:1px solid #fde68a}
+
+/* Controls */
+.ctrl{padding:10px 32px;display:flex;align-items:center;gap:16px;flex-shrink:0;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.chk{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;user-select:none}
+.chk input{width:15px;height:15px;cursor:pointer;accent-color:var(--accent)}
+select{padding:5px 9px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);cursor:pointer}
+.chips{display:flex;gap:8px;margin-left:auto}
+.chip{padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px}
+.chip.total{background:#f0f9ff;color:#075985;border:1px solid #bae6fd}
+.chip.civil{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
+.chip.mil  {background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.chip.dark {background:#f5f3ff;color:#5b21b6;border:1px solid #ddd6fe}
+.chip.spoof{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
+
+#map{flex:1;min-height:0}
+
+/* EDA */
+.eda{flex:1;overflow-y:auto;padding:24px 32px}
+.eda h2{font-size:20px;font-weight:700;margin-bottom:20px}
+.eda h3{font-size:16px;font-weight:600;margin:28px 0 12px}
+.sgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+.sc{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;text-align:center}
+.sc .v{font-size:28px;font-weight:700}
+.sc .l{font-size:12px;color:var(--text2);margin-top:4px}
+.crow{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:24px}
+.cc{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px}
+.cc h4{font-size:13px;font-weight:600;color:var(--text2);margin-bottom:10px}
+.cc canvas{max-height:190px}
+.tw{border:1px solid var(--border);border-radius:8px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead tr{background:var(--bg2)}
+th{padding:9px 12px;text-align:left;font-weight:600;color:var(--text2);font-size:11px;border-bottom:1px solid var(--border);white-space:nowrap;text-transform:uppercase;letter-spacing:.03em}
+td{padding:9px 12px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafafa}
+.badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700}
+.badge.spoof{background:#fef2f2;color:#991b1b}
+.badge.sus  {background:#fff7ed;color:#9a3412}
+.badge.clean{background:#f0fdf4;color:#166534}
+.badge.mil  {background:#fef2f2;color:#991b1b}
+.badge.likely{background:#fff7ed;color:#9a3412}
+.badge.civil{background:#f0fdf4;color:#166534}
+.badge.dark {background:#f5f3ff;color:#5b21b6}
+.badge.gray {background:#f9fafb;color:#374151;border:1px solid #e5e7eb}
+.pb{display:flex;align-items:center;gap:7px}
+.pb-bar{height:5px;flex:1;background:#e5e7eb;border-radius:3px;overflow:hidden;min-width:60px}
+.pb-fill{height:100%;border-radius:3px}
+
+/* Manual */
+.man{flex:1;overflow-y:auto;padding:24px 32px}
+.man h2{font-size:20px;font-weight:700;margin-bottom:6px}
+.sub{font-size:14px;color:var(--text2);margin-bottom:24px}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:600px}
+.fg label{display:block;font-size:13px;font-weight:500;margin-bottom:5px}
+.fg input{width:100%;padding:7px 11px;border:1px solid var(--border);border-radius:6px;font-size:14px}
+.fg input:focus{outline:none;border-color:var(--accent)}
+.btn{margin-top:18px;padding:9px 26px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer}
+.btn:hover{background:#dc2626}
+.rbox{margin-top:22px;max-width:600px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:18px}
+.rbox h3{font-size:15px;font-weight:700;margin-bottom:12px}
+.rr{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px}
+.rr:last-child{border-bottom:none}
+.rr .k{color:var(--text2)}
+
+/* ── History Panel ─────────────────────────────────────────── */
+#hp{position:fixed;top:0;right:-520px;width:500px;height:100vh;background:#fff;border-left:1px solid var(--border);box-shadow:-4px 0 24px rgba(0,0,0,.1);z-index:9999;display:flex;flex-direction:column;transition:right .3s cubic-bezier(.4,0,.2,1)}
+#hp.open{right:0}
+.hph{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.hph-left .t{font-size:16px;font-weight:700}
+.hph-left .s{font-size:12px;color:var(--text2);margin-top:2px}
+.hpx{width:30px;height:30px;border-radius:6px;border:1px solid var(--border);background:none;cursor:pointer;font-size:20px;color:var(--text2);display:flex;align-items:center;justify-content:center;line-height:1}
+.hpx:hover{background:var(--bg2)}
+.hpb{padding:10px 20px;display:flex;gap:8px;flex-shrink:0;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.hpbody{flex:1;overflow-y:auto;padding:16px 20px}
+.hpsec{margin-bottom:22px}
+.hpsec h4{font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.hpcw{position:relative;height:120px}
+.evtlist{display:flex;flex-direction:column;gap:6px}
+.evt{display:flex;align-items:flex-start;gap:10px;padding:9px 11px;border-radius:7px;font-size:12px;border:1px solid;animation:fadein .3s}
+@keyframes fadein{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.evt.red   {background:#fef2f2;border-color:#fecaca}
+.evt.orange{background:#fff7ed;border-color:#fed7aa}
+.evt.gray  {background:#f9fafb;border-color:#e5e7eb}
+.evtdot{width:8px;height:8px;border-radius:50%;margin-top:3px;flex-shrink:0}
+.evttime{font-weight:700;font-family:monospace;font-size:11px;color:#374151}
+.evtmsg{color:var(--text);line-height:1.5;margin-top:2px}
+
+/* WS */
+.wsd{width:8px;height:8px;border-radius:50%;display:inline-block}
+.wsd.connected   {background:#22c55e;box-shadow:0 0 5px #22c55e}
+.wsd.connecting  {background:#f59e0b}
+.wsd.disconnected{background:#ef4444}
+
+/* Popup */
+.pt{font-weight:700;font-size:14px;margin-bottom:8px}
+.pr{display:flex;justify-content:space-between;gap:14px;margin-bottom:3px;font-size:13px}
+.pk{color:#6b7280}
+.view-hist{display:block;margin-top:10px;width:100%;padding:7px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;text-align:center}
+.view-hist:hover{background:#dc2626}
+
+@media(max-width:768px){.sgrid{grid-template-columns:1fr 1fr}.crow{grid-template-columns:1fr}.fgrid{grid-template-columns:1fr}.chips{display:none}}
+</style>
+</head>
+<body>
+
+<!-- ── History Panel ────────────────────────────────────────── -->
+<div id="hp">
+  <div class="hph">
+    <div class="hph-left">
+      <div class="t" id="hp-title">—</div>
+      <div class="s" id="hp-sub">—</div>
+    </div>
+    <button class="hpx" onclick="closePanel()">×</button>
+  </div>
+  <div class="hpb" id="hp-badges"></div>
+  <div class="hpbody">
+
+    <div class="hpsec">
+      <h4>⚡ Speed (knots)</h4>
+      <div class="hpcw"><canvas id="hp-spd"></canvas></div>
+    </div>
+
+    <div class="hpsec">
+      <h4>🛫 Altitude (ft)</h4>
+      <div class="hpcw"><canvas id="hp-alt"></canvas></div>
+    </div>
+
+    <div class="hpsec">
+      <h4>🧭 Heading (°)</h4>
+      <div class="hpcw"><canvas id="hp-hdg"></canvas></div>
+    </div>
+
+    <div class="hpsec">
+      <h4>🚨 Anomaly Event Log</h4>
+      <div class="evtlist" id="hp-evts">
+        <div style="color:#9ca3af;font-size:13px">Collecting data — events will appear here…</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Header ───────────────────────────────────────────────── -->
+<div class="hdr">
+  <h1>
+    SkySecure V2 — Live Aircraft &amp; Spoof Detection
+    <span style="font-size:13px;font-weight:400;color:#6b7280">
+      <span class="wsd connecting" id="wsd"></span>
+      <span id="wslbl">Connecting…</span>
+    </span>
+  </h1>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('map')">Live Aircraft Map</div>
+    <div class="tab" onclick="switchTab('eda')">EDA &amp; ML</div>
+    <div class="tab" onclick="switchTab('manual')">Manual Packet Entry</div>
+  </div>
+</div>
+
+<!-- ── MAP TAB ───────────────────────────────────────────────── -->
+<div class="tc active" id="tab-map">
+  <div id="banner" class="banner yellow">⏳ Connecting to live data stream…</div>
+  <div class="ctrl">
+    <label class="chk"><input type="checkbox" id="chk-spoof" onchange="applyFilters()"> Show only planes with Spoof Probability ≥ 30%</label>
+    <label class="chk"><input type="checkbox" id="chk-mil"   onchange="applyFilters()"> Military only</label>
+    <label class="chk"><input type="checkbox" id="chk-apt"   checked onchange="drawAirports()"> Airport regions</label>
+    <select id="apt-sel" onchange="flyTo()"><option value="">Jump to airport…</option></select>
+    <div class="chips">
+      <div class="chip total">✈ <span id="ct">0</span></div>
+      <div class="chip civil">● <span id="cc">0</span> civil</div>
+      <div class="chip mil">● <span id="cm">0</span> mil</div>
+      <div class="chip dark">● <span id="cd">0</span> dark</div>
+      <div class="chip spoof">⚠ <span id="cs">0</span> spoofed</div>
+    </div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<!-- ── EDA TAB ───────────────────────────────────────────────── -->
+<div class="tc" id="tab-eda">
+  <div class="eda">
+    <h2>Exploratory Data Analysis &amp; ML Results</h2>
+    <div class="sgrid">
+      <div class="sc"><div class="v" id="e-tot">—</div><div class="l">Total Tracked</div></div>
+      <div class="sc"><div class="v" id="e-sp" style="color:#ef4444">—</div><div class="l">Likely Spoofed (≥30%)</div></div>
+      <div class="sc"><div class="v" id="e-mil" style="color:#f97316">—</div><div class="l">Military / Dark</div></div>
+      <div class="sc"><div class="v" id="e-cl" style="color:#22c55e">—</div><div class="l">Clean Civilian</div></div>
+    </div>
+    <div class="crow">
+      <div class="cc"><h4>Classification Breakdown</h4><canvas id="ch-cls"></canvas></div>
+      <div class="cc"><h4>Spoof Probability Distribution</h4><canvas id="ch-prob"></canvas></div>
+    </div>
+    <h3>Most Likely Spoofed Aircraft</h3>
+    <div class="tw">
+      <table>
+        <thead><tr>
+          <th>AircraftID</th><th>Callsign</th><th>Latitude</th><th>Longitude</th>
+          <th>Altitude (ft)</th><th>Speed (kts)</th><th>Classification</th>
+          <th>Spoof Probability</th><th>Anomalies</th>
+        </tr></thead>
+        <tbody id="stb"><tr><td colspan="9" style="text-align:center;color:#9ca3af;padding:20px">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ── MANUAL TAB ────────────────────────────────────────────── -->
+<div class="tc" id="tab-manual">
+  <div class="man">
+    <h2>Manual Packet Entry</h2>
+    <p class="sub">Enter raw aircraft telemetry to run spoof detection.</p>
+    <div class="fgrid">
+      <div class="fg"><label>ICAO24 Address</label><input id="m-icao" placeholder="e.g. A1B2C3" maxlength="6"/></div>
+      <div class="fg"><label>Callsign</label><input id="m-cs" placeholder="e.g. UAL123"/></div>
+      <div class="fg"><label>Latitude</label><input id="m-lat" type="number" placeholder="-90 to 90" step="0.0001"/></div>
+      <div class="fg"><label>Longitude</label><input id="m-lon" type="number" placeholder="-180 to 180" step="0.0001"/></div>
+      <div class="fg"><label>Altitude (ft)</label><input id="m-alt" type="number" placeholder="e.g. 35000"/></div>
+      <div class="fg"><label>Speed (knots)</label><input id="m-vel" type="number" placeholder="e.g. 450"/></div>
+      <div class="fg"><label>Heading (°)</label><input id="m-hdg" type="number" placeholder="0–359"/></div>
+      <div class="fg"><label>Vertical Rate (fpm)</label><input id="m-vr" type="number" placeholder="e.g. 0"/></div>
+    </div>
+    <button class="btn" onclick="analyzeManual()">Analyze Packet</button>
+    <div id="mres" style="display:none" class="rbox"></div>
+  </div>
+</div>
+
+<!-- Scripts at bottom so L and Chart are defined before use -->
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const API    = 'http://localhost:8000';
+const WS_URL = 'ws://localhost:8000/ws/tracks';
+
+// Confirmed military ICAO blocks only
+// ICAO24 military blocks — CONFIRMED exclusively-military only.
+// Ranges that overlap with large civilian fleets (China, Russia, Australia)
+// are intentionally excluded to prevent false positives.
+// Sources: ICAO Doc 9303, OpenSky military DB, Junzi Sun research (TU Delft).
+const MIL_RANGES = [
+  // ── United States ──────────────────────────────────────────
+  [0xADF000, 0xADFFFF],  // USAF airlift/tanker (C-17, KC-135, etc.)
+  [0xAE0000, 0xAFFFFF],  // US DOD (all services) — confirmed exclusively military
+  [0xA9F000, 0xA9FFFF],  // US Coast Guard
+
+  // ── United Kingdom ─────────────────────────────────────────
+  [0x43C000, 0x43CFFF],  // Royal Air Force
+  [0x43D000, 0x43D7FF],  // Royal Navy Fleet Air Arm
+
+  // ── France ─────────────────────────────────────────────────
+  [0x3C4000, 0x3C47FF],  // Armée de l'Air (French AF)
+  [0x3C6000, 0x3C63FF],  // Marine Nationale (French Navy aviation)
+
+  // ── Germany ────────────────────────────────────────────────
+  [0x3C0000, 0x3C07FF],  // Luftwaffe (German AF) — narrow confirmed range only
+
+  // ── Italy ──────────────────────────────────────────────────
+  [0x47A000, 0x47AFFF],  // Aeronautica Militare
+
+  // ── Spain ──────────────────────────────────────────────────
+  [0x340000, 0x3407FF],  // Ejército del Aire
+
+  // ── Netherlands ────────────────────────────────────────────
+  [0x480000, 0x4807FF],  // Koninklijke Luchtmacht
+
+  // ── NATO / Multi-nation ────────────────────────────────────
+  [0x4D2000, 0x4D2FFF],  // NATO AWACS (E-3 Sentry)
+  [0x4D0000, 0x4D0FFF],  // NATO support aircraft
+];
+
+const AIRPORTS = [
+  {iata:'JFK',name:'New York JFK',      lat:40.6413,lon:-73.7781},
+  {iata:'LAX',name:'Los Angeles',       lat:33.9425,lon:-118.408},
+  {iata:'ORD',name:"Chicago O'Hare",    lat:41.9742,lon:-87.9073},
+  {iata:'LHR',name:'London Heathrow',   lat:51.4775,lon:-0.4614 },
+  {iata:'CDG',name:'Paris CDG',         lat:49.0097,lon:2.5479  },
+  {iata:'AMS',name:'Amsterdam Schiphol',lat:52.3105,lon:4.7683  },
+  {iata:'FRA',name:'Frankfurt',         lat:50.0379,lon:8.5622  },
+  {iata:'DXB',name:'Dubai',             lat:25.2532,lon:55.3657 },
+  {iata:'SIN',name:'Singapore Changi',  lat:1.3644, lon:103.992 },
+  {iata:'NRT',name:'Tokyo Narita',      lat:35.7720,lon:140.393 },
+  {iata:'SYD',name:'Sydney',            lat:-33.946,lon:151.177 },
+  {iata:'GRU',name:'São Paulo',         lat:-23.436,lon:-46.473 },
+  {iata:'ATL',name:'Atlanta',           lat:33.6407,lon:-84.428 },
+  {iata:'DFW',name:'Dallas/Fort Worth', lat:32.8998,lon:-97.040 },
+  {iata:'MIA',name:'Miami',             lat:25.7959,lon:-80.287 },
+  {iata:'SEA',name:'Seattle',           lat:47.4502,lon:-122.31 },
+  {iata:'BOS',name:'Boston',            lat:42.3656,lon:-71.010 },
+  {iata:'YYZ',name:'Toronto Pearson',   lat:43.6777,lon:-79.625 },
+  {iata:'ICN',name:'Seoul Incheon',     lat:37.4602,lon:126.441 },
+  {iata:'MEX',name:'Mexico City',       lat:19.4361,lon:-99.072 },
+];
+
+// ── State ────────────────────────────────────────────────────
+let allAC = [], markers = {}, aptLayers = [], map;
+let ch1 = null, ch2 = null;
+
+// Per-aircraft history: icao → [{t,ts,vel,alt,hdg,sp}]
+const acHistory  = {};
+const acEvents   = {};   // icao → [{ts,severity,msg}]
+const MAX_PTS    = 120;
+
+// Panel state
+let openIcao = null;
+let hpSpd = null, hpAlt = null, hpHdg = null;
+
+// ── Spoof score ──────────────────────────────────────────────
+// Only hard, unambiguous evidence of spoofing is counted.
+// Anything that could be a data quality issue (e.g. slightly off
+// coordinates, missing fields) is NOT penalised.
+function spoofScore(ac) {
+  let s = 0;
+
+  // Hard physical impossibility — coordinates outside Earth
+  if (ac.lat != null && (ac.lat < -90  || ac.lat > 90))  s += 70;
+  if (ac.lon != null && (ac.lon < -180 || ac.lon > 180)) s += 70;
+
+  // Well-known sentinel/junk values used in synthetic spoofed datasets
+  if (ac.alt === 999999) s += 65;
+  if (ac.vel === 9999)   s += 65;
+
+  // Physically impossible performance for any known aircraft
+  // (SR-71 max ~2,200 kts, Concorde ~1,165 kts cruise)
+  if (ac.vel != null && ac.vel > 2000) s += 55;   // clearly impossible
+  else if (ac.vel != null && ac.vel > 1400) s += 25; // very suspicious
+
+  // Above stratosphere (highest altitude record ~85,000 ft U-2/SR-71)
+  if (ac.alt != null && ac.alt > 100000) s += 50;
+
+  // Backend-confirmed spoofing signals only (not generic anomalies)
+  if (ac.anoms) {
+    if (ac.anoms.includes('GNSS_SPOOF'))     s += 55;
+    if (ac.anoms.includes('IDENTITY_SPOOF')) s += 60;
+    if (ac.anoms.includes('DUPLICATE_ICAO')) s += 65;
+    if (ac.anoms.includes('TELEPORTATION'))  s += 45;
+    // GHOST_AIRCRAFT alone is not enough — common in data gaps
+  }
+
+  return Math.min(100, Math.round(s));
+}
+
+function checkMil(ac) {
+  if (!ac.icao) return false;
+  const v = parseInt(ac.icao, 16);
+  if (isNaN(v)) return false;
+  return MIL_RANGES.some(([a,b]) => v >= a && v <= b);
+}
+
+function mkColor(ac) {
+  const sp = spoofScore(ac);
+  if (sp >= 60)                   return '#ef4444';
+  if (sp >= 30)                   return '#f97316';
+  if (checkMil(ac))               return '#ef4444';
+  if (ac.cls === 'DARK_AIRCRAFT') return '#a855f7';
+  return '#22c55e';
+}
+
+// ── History recording ────────────────────────────────────────
+function recordHistory(a) {
+  if (!a.icao) return;
+  if (!acHistory[a.icao]) acHistory[a.icao] = [];
+  if (!acEvents[a.icao])  acEvents[a.icao]  = [];
+
+  const now  = new Date();
+  const ts   = now.toISOString().substr(11, 8) + ' UTC';
+  const prev = acHistory[a.icao].at(-1);
+  const pt   = { t: now, ts, vel: a.vel ?? null, alt: a.alt ?? null, hdg: a.hdg ?? null, sp: spoofScore(a) };
+
+  if (prev) {
+    const dtSec = (now - prev.t) / 1000;
+
+    // Speed spike
+    if (prev.vel != null && pt.vel != null) {
+      const dv = Math.abs(pt.vel - prev.vel);
+      if (dv > 200 && dtSec < 60) {
+        pushEvent(a.icao, ts, 'red',
+          `Speed jumped from <b>${Math.round(prev.vel)} kts → ${Math.round(pt.vel)} kts</b> (+${Math.round(dv)} kts in ${Math.round(dtSec)}s)`);
+      }
+    }
+
+    // Altitude spike
+    if (prev.alt != null && pt.alt != null) {
+      const da = Math.abs(pt.alt - prev.alt);
+      const maxPossible = dtSec * 200; // ~12,000 fpm generous
+      if (da > 5000 && da > maxPossible) {
+        pushEvent(a.icao, ts, 'red',
+          `Altitude jumped from <b>${prev.alt.toLocaleString()} ft → ${pt.alt.toLocaleString()} ft</b> (${da.toLocaleString()} ft in ${Math.round(dtSec)}s — physically impossible)`);
+      }
+    }
+
+    // Heading flip > 120° in < 5s
+    if (prev.hdg != null && pt.hdg != null && dtSec < 5) {
+      let dh = Math.abs(pt.hdg - prev.hdg) % 360;
+      if (dh > 180) dh = 360 - dh;
+      if (dh > 120) {
+        pushEvent(a.icao, ts, 'orange',
+          `Heading changed <b>${Math.round(dh)}°</b> in ${Math.round(dtSec)}s (${Math.round(prev.hdg)}° → ${Math.round(pt.hdg)}°)`);
+      }
+    }
+
+    // Spoof threshold crossed
+    if (prev.sp < 30 && pt.sp >= 30) {
+      pushEvent(a.icao, ts, 'red',
+        `Spoof probability crossed 30% threshold — now <b>${pt.sp}%</b>`);
+    }
+  }
+
+  acHistory[a.icao].push(pt);
+  if (acHistory[a.icao].length > MAX_PTS) acHistory[a.icao].shift();
+
+  // Refresh open panel live
+  if (openIcao === a.icao) renderPanel(a.icao);
+}
+
+function pushEvent(icao, ts, severity, msg) {
+  acEvents[icao].unshift({ ts, severity, msg });
+  if (acEvents[icao].length > 50) acEvents[icao].pop();
+}
+
+// ── History Panel ────────────────────────────────────────────
+function openPanel(icao) {
+  openIcao = icao;
+  document.getElementById('hp').classList.add('open');
+  renderPanel(icao);
+}
+
+function closePanel() {
+  document.getElementById('hp').classList.remove('open');
+  openIcao = null;
+}
+
+function renderPanel(icao) {
+  const ac   = allAC.find(a => a.icao === icao);
+  const hist = acHistory[icao] || [];
+  const evts = acEvents[icao]  || [];
+  if (!ac) return;
+
+  const sp  = spoofScore(ac);
+  const mil = checkMil(ac);
+  const cls = mil ? 'CONFIRMED MILITARY' : (ac.cls || 'UNKNOWN').replace(/_/g, ' ');
+  const spCol = sp >= 60 ? '#ef4444' : sp >= 30 ? '#f97316' : '#22c55e';
+
+  document.getElementById('hp-title').textContent =
+    icao + (ac.cs ? ' — ' + ac.cs : '');
+  document.getElementById('hp-sub').textContent =
+    (ac.alt ? ac.alt.toLocaleString() + ' ft' : '—') + '  ·  ' +
+    (ac.vel ? Math.round(ac.vel) + ' kts' : '—') + '  ·  ' +
+    (ac.hdg ? Math.round(ac.hdg) + '°' : '—') + '  ·  ' +
+    hist.length + ' data points';
+
+  const cb = mil ? 'mil' : sp >= 30 ? 'spoof' : 'civil';
+  const sb = sp >= 60 ? 'spoof' : sp >= 30 ? 'sus' : 'clean';
+  document.getElementById('hp-badges').innerHTML =
+    `<span class="badge ${cb}">${cls}</span>` +
+    `<span class="badge ${sb}">Spoof ${sp}%</span>` +
+    `<span class="badge gray">Risk ${ac.risk || 0}/100</span>` +
+    (evts.length ? `<span class="badge spoof">⚠ ${evts.length} events</span>` : '');
+
+  // Chart data
+  const labels = hist.map(p => p.ts.substr(0, 8));
+  const vels   = hist.map(p => p.vel);
+  const alts   = hist.map(p => p.alt);
+  const hdgs   = hist.map(p => p.hdg);
+
+  // Anomaly scatter points
+  const spdAnoms = [];
+  const altAnoms = [];
+  hist.forEach((p, i) => {
+    if (i === 0) return;
+    const pv = hist[i - 1];
+    if (pv.vel != null && p.vel != null && Math.abs(p.vel - pv.vel) > 200)
+      spdAnoms.push({ x: labels[i], y: p.vel });
+    if (pv.alt != null && p.alt != null && Math.abs(p.alt - pv.alt) > 5000)
+      altAnoms.push({ x: labels[i], y: p.alt });
+  });
+
+  const opts = (unit) => ({
+    responsive: true, maintainAspectRatio: false, animation: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: c =>
+        (c.dataset.label === 'Anomaly' ? '⚠ ANOMALY: ' : '') +
+        (c.parsed.y != null ? Math.round(c.parsed.y) + ' ' + unit : '—')
+      }}
+    },
+    scales: {
+      x: { ticks: { font: { size: 9 }, maxRotation: 0, maxTicksLimit: 8 }, grid: { color: '#f3f4f6' } },
+      y: { ticks: { font: { size: 10 } }, grid: { color: '#f3f4f6' } }
+    }
+  });
+
+  if (hpSpd) hpSpd.destroy();
+  hpSpd = new Chart(document.getElementById('hp-spd').getContext('2d'), {
+    data: { labels, datasets: [
+      { type:'line', label:'Speed (kts)', data:vels, borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.08)', borderWidth:2, pointRadius:0, fill:true, tension:0.3, spanGaps:true },
+      { type:'scatter', label:'Anomaly', data:spdAnoms, backgroundColor:'#ef4444', pointRadius:8, pointStyle:'triangle' }
+    ]},
+    options: opts('kts')
+  });
+
+  if (hpAlt) hpAlt.destroy();
+  hpAlt = new Chart(document.getElementById('hp-alt').getContext('2d'), {
+    data: { labels, datasets: [
+      { type:'line', label:'Altitude (ft)', data:alts, borderColor:'#8b5cf6', backgroundColor:'rgba(139,92,246,0.08)', borderWidth:2, pointRadius:0, fill:true, tension:0.3, spanGaps:true },
+      { type:'scatter', label:'Anomaly', data:altAnoms, backgroundColor:'#ef4444', pointRadius:8, pointStyle:'triangle' }
+    ]},
+    options: opts('ft')
+  });
+
+  if (hpHdg) hpHdg.destroy();
+  hpHdg = new Chart(document.getElementById('hp-hdg').getContext('2d'), {
+    type:'line', data:{ labels, datasets:[{
+      label:'Heading (°)', data:hdgs, borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,0.08)',
+      borderWidth:2, pointRadius:0, fill:true, tension:0.3, spanGaps:true
+    }]},
+    options: opts('°')
+  });
+
+  // Event log
+  const evtDiv = document.getElementById('hp-evts');
+  if (!evts.length) {
+    evtDiv.innerHTML = '<div style="color:#9ca3af;font-size:13px">No anomalies detected yet — watching this aircraft…</div>';
+  } else {
+    evtDiv.innerHTML = evts.map(e =>
+      `<div class="evt ${e.severity}">
+        <div class="evtdot" style="background:${e.severity==='red'?'#ef4444':'#f97316'}"></div>
+        <div>
+          <div class="evttime">${e.ts}</div>
+          <div class="evtmsg">${e.msg}</div>
+        </div>
+      </div>`
+    ).join('');
+  }
+}
+
+// ── Map init ─────────────────────────────────────────────────
+function initMap() {
+  map = L.map('map', { preferCanvas: true }).setView([30, 10], 3);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap © CARTO', subdomains: 'abcd', maxZoom: 19
+  }).addTo(map);
+
+  const sel = document.getElementById('apt-sel');
+  AIRPORTS.forEach(a => {
+    const o = document.createElement('option');
+    o.value = a.lat + ',' + a.lon;
+    o.textContent = a.iata + ' — ' + a.name;
+    sel.appendChild(o);
+  });
+  drawAirports();
+}
+
+function drawAirports() {
+  aptLayers.forEach(l => map.removeLayer(l));
+  aptLayers = [];
+  if (!document.getElementById('chk-apt').checked) return;
+  AIRPORTS.forEach(a => {
+    const c = L.circle([a.lat, a.lon], {
+      radius: 27780, color: '#3b82f6', fillColor: '#3b82f6',
+      fillOpacity: 0.05, weight: 1, dashArray: '4 4', opacity: 0.35
+    }).addTo(map);
+    const lbl = L.marker([a.lat, a.lon], {
+      icon: L.divIcon({
+        className: '',
+        html: '<div style="color:#93c5fd;font-size:10px;font-weight:600;white-space:nowrap;text-shadow:0 1px 3px #000">' + a.iata + '</div>',
+        iconAnchor: [10, 0]
+      })
+    }).addTo(map);
+    aptLayers.push(c, lbl);
+  });
+}
+
+function flyTo() {
+  const v = document.getElementById('apt-sel').value;
+  if (!v) return;
+  const [lat, lon] = v.split(',').map(Number);
+  map.flyTo([lat, lon], 9, { duration: 1.3 });
+  setTimeout(() => document.getElementById('apt-sel').value = '', 100);
+}
+
+// ── Render aircraft ──────────────────────────────────────────
+function applyFilters() { renderAircraft(allAC); }
+
+function renderAircraft(ac) {
+  allAC = ac;
+  const spoofOnly = document.getElementById('chk-spoof').checked;
+  const milOnly   = document.getElementById('chk-mil').checked;
+  const seen = new Set();
+  let civil = 0, mil = 0, dark = 0, spf = 0;
+
+  ac.forEach(a => {
+    if (a.lat == null || a.lon == null) return;
+    if (isNaN(a.lat) || isNaN(a.lon))  return;
+    if (a.lat < -90 || a.lat > 90)     return;
+    if (a.lon < -180 || a.lon > 180)   return;
+
+    seen.add(a.icao);
+    recordHistory(a);   // ← record every update
+
+    const sp    = spoofScore(a);
+    const isMil = checkMil(a);
+    const color = mkColor(a);
+
+    if (isMil)                        mil++;
+    else if (a.cls === 'DARK_AIRCRAFT') dark++;
+    else                              civil++;
+    if (sp >= 30) spf++;
+
+    const vis = (!spoofOnly || sp >= 30) && (!milOnly || isMil);
+
+    if (markers[a.icao]) {
+      markers[a.icao].setLatLng([a.lat, a.lon]);
+      markers[a.icao].setStyle({ color, fillColor: color, radius: sp >= 50 ? 5 : 3 });
+      vis ? (!map.hasLayer(markers[a.icao]) && markers[a.icao].addTo(map))
+          : map.removeLayer(markers[a.icao]);
+    } else {
+      const m = L.circleMarker([a.lat, a.lon], {
+        radius: sp >= 50 ? 5 : 3, color, fillColor: color, fillOpacity: 0.9, weight: 0
+      });
+      m.bindPopup(() => buildPopup(a), { maxWidth: 280 });
+      if (vis) m.addTo(map);
+      markers[a.icao] = m;
+    }
+  });
+
+  Object.keys(markers).forEach(id => {
+    if (!seen.has(id)) { map.removeLayer(markers[id]); delete markers[id]; }
+  });
+
+  document.getElementById('ct').textContent = ac.length;
+  document.getElementById('cc').textContent = civil;
+  document.getElementById('cm').textContent = mil;
+  document.getElementById('cd').textContent = dark;
+  document.getElementById('cs').textContent = spf;
+}
+
+function buildPopup(a) {
+  const sp  = spoofScore(a);
+  const col = sp >= 60 ? '#ef4444' : sp >= 30 ? '#f97316' : '#22c55e';
+  const cls = checkMil(a) ? 'CONFIRMED MILITARY' : (a.cls || 'UNKNOWN').replace(/_/g, ' ');
+  const evts = acEvents[a.icao] || [];
+  return `
+    <div class="pt">${a.icao}${a.cs ? ' — ' + a.cs : ''}</div>
+    <div class="pr"><span class="pk">Classification</span><b>${cls}</b></div>
+    <div class="pr"><span class="pk">Spoof probability</span><b style="color:${col}">${sp}%</b></div>
+    <div class="pr"><span class="pk">Altitude</span><span>${a.alt ? a.alt.toLocaleString() + ' ft' : '—'}</span></div>
+    <div class="pr"><span class="pk">Speed</span><span>${a.vel ? Math.round(a.vel) + ' kts' : '—'}</span></div>
+    <div class="pr"><span class="pk">Heading</span><span>${a.hdg ? Math.round(a.hdg) + '°' : '—'}</span></div>
+    <div class="pr"><span class="pk">Risk score</span><span>${a.risk || 0}/100</span></div>
+    <div class="pr"><span class="pk">History points</span><span>${(acHistory[a.icao] || []).length}</span></div>
+    ${evts.length ? `<div class="pr"><span class="pk" style="color:#ef4444">⚠ Events detected</span><span style="color:#ef4444;font-weight:700">${evts.length}</span></div>` : ''}
+    <button class="view-hist" onclick="map.closePopup(); openPanel('${a.icao}')">
+      📊 View History &amp; Charts
+    </button>`;
+}
+
+// ── EDA ──────────────────────────────────────────────────────
+function updateEDA(ac) {
+  const tot = ac.length;
+  const spf = ac.filter(a => spoofScore(a) >= 30).length;
+  const mil = ac.filter(a => checkMil(a) || a.cls === 'DARK_AIRCRAFT').length;
+  const cln = Math.max(0, tot - spf - mil);
+
+  document.getElementById('e-tot').textContent = tot;
+  document.getElementById('e-sp').textContent  = spf;
+  document.getElementById('e-mil').textContent = mil;
+  document.getElementById('e-cl').textContent  = cln;
+
+  const clsCounts = { CIVILIAN:0, LIKELY_MILITARY:0, CONFIRMED_MILITARY:0, DARK_AIRCRAFT:0, UNKNOWN:0 };
+  ac.forEach(a => {
+    const k = checkMil(a) ? 'CONFIRMED_MILITARY' : (a.cls || 'UNKNOWN');
+    if (k in clsCounts) clsCounts[k]++; else clsCounts.UNKNOWN++;
+  });
+  if (ch1) ch1.destroy();
+  ch1 = new Chart(document.getElementById('ch-cls').getContext('2d'), {
+    type:'doughnut',
+    data:{ labels:['Civilian','Likely Military','Confirmed Military','Dark','Unknown'],
+      datasets:[{ data:Object.values(clsCounts), backgroundColor:['#22c55e','#f97316','#ef4444','#8b5cf6','#9ca3af'], borderWidth:0 }]},
+    options:{ plugins:{ legend:{ position:'right', labels:{ font:{size:11}, boxWidth:12 }}}, cutout:'60%' }
+  });
+
+  const bins = new Array(10).fill(0);
+  ac.forEach(a => { const sp = spoofScore(a); bins[Math.min(9, Math.floor(sp / 10))]++; });
+  if (ch2) ch2.destroy();
+  ch2 = new Chart(document.getElementById('ch-prob').getContext('2d'), {
+    type:'bar',
+    data:{ labels:['0–10','10–20','20–30','30–40','40–50','50–60','60–70','70–80','80–90','90–100'],
+      datasets:[{ data:bins, backgroundColor:bins.map((_,i)=>i>=6?'#ef4444':i>=3?'#f97316':'#22c55e'), borderRadius:4, borderSkipped:false }]},
+    options:{ plugins:{ legend:{ display:false }}, scales:{ x:{ ticks:{ font:{ size:10 }}}, y:{ beginAtZero:true }}}
+  });
+
+  const tbody = document.getElementById('stb');
+  const rows  = [...ac].map(a => ({...a, sp: spoofScore(a)})).filter(a => a.sp > 0).sort((a,b) => b.sp - a.sp).slice(0, 50);
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#9ca3af;padding:20px">No suspicious aircraft.</td></tr>'; return;
+  }
+  tbody.innerHTML = rows.map(a => {
+    const cls  = checkMil(a) ? 'CONFIRMED_MILITARY' : (a.cls || 'UNKNOWN');
+    const cb   = {CIVILIAN:'civil',LIKELY_MILITARY:'likely',CONFIRMED_MILITARY:'mil',DARK_AIRCRAFT:'dark',UNKNOWN:'dark'}[cls] || 'civil';
+    const sb   = a.sp >= 60 ? 'spoof' : a.sp >= 30 ? 'sus' : 'clean';
+    const bc   = a.sp >= 60 ? '#ef4444' : a.sp >= 30 ? '#f97316' : '#22c55e';
+    const anom = a.anoms?.join(', ').replace(/_/g,' ') || '—';
+    const evts = acEvents[a.icao] || [];
+    return `<tr style="cursor:pointer" onclick="openPanel('${a.icao}');switchTab('map')">
+      <td style="font-weight:600;font-family:monospace">${a.icao}</td>
+      <td>${a.cs || '—'}</td>
+      <td>${a.lat != null ? a.lat.toFixed(4) : '—'}</td>
+      <td>${a.lon != null ? a.lon.toFixed(4) : '—'}</td>
+      <td>${a.alt != null ? a.alt.toLocaleString() : '—'}</td>
+      <td>${a.vel != null ? Math.round(a.vel) : '—'}</td>
+      <td><span class="badge ${cb}">${cls.replace(/_/g,' ')}</span></td>
+      <td><div class="pb"><div class="pb-bar"><div class="pb-fill" style="width:${a.sp}%;background:${bc}"></div></div><span class="badge ${sb}">${a.sp}%</span></div></td>
+      <td style="font-size:11px;color:#6b7280;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${evts.length ? '⚠ '+evts.length+' events · ' : ''}${anom}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Manual entry ─────────────────────────────────────────────
+function analyzeManual() {
+  const a = {
+    icao: document.getElementById('m-icao').value.trim().toUpperCase(),
+    cs:   document.getElementById('m-cs').value.trim(),
+    lat:  parseFloat(document.getElementById('m-lat').value),
+    lon:  parseFloat(document.getElementById('m-lon').value),
+    alt:  parseFloat(document.getElementById('m-alt').value),
+    vel:  parseFloat(document.getElementById('m-vel').value),
+    hdg:  parseFloat(document.getElementById('m-hdg').value),
+    vr:   parseFloat(document.getElementById('m-vr').value),
+    risk: 0, anoms: [], cls: 'UNKNOWN'
+  };
+  const sp  = spoofScore(a);
+  const mil = checkMil(a);
+  const cls = mil ? 'CONFIRMED MILITARY' : sp >= 60 ? 'SPOOFED' : sp >= 30 ? 'SUSPICIOUS' : 'CIVILIAN';
+  const col = sp >= 60 ? '#ef4444' : sp >= 30 ? '#f97316' : '#22c55e';
+  const reasons = [];
+  if (a.lat < -90 || a.lat > 90)   reasons.push('Latitude out of valid range (−90 to 90)');
+  if (a.lon < -180 || a.lon > 180) reasons.push('Longitude out of valid range (−180 to 180)');
+  if (a.alt === 999999)            reasons.push('Sentinel altitude value 999999');
+  if (a.vel === 9999)              reasons.push('Sentinel speed value 9999');
+  if (a.vel > 1200)                reasons.push('Speed ' + a.vel + ' kts exceeds physical maximum (~1200 kts)');
+  if (a.alt > 90000)               reasons.push('Altitude ' + a.alt.toLocaleString() + ' ft above stratosphere');
+  if (mil)                         reasons.push('ICAO24 falls within a confirmed military address block');
+
+  const box = document.getElementById('mres');
+  box.style.display = 'block';
+  box.innerHTML = `<h3>Result — ${a.icao || '?'}</h3>
+    <div class="rr"><span class="k">Spoof Probability</span><b style="color:${col};font-size:22px">${sp}%</b></div>
+    <div class="rr"><span class="k">Classification</span><b>${cls}</b></div>
+    <div class="rr"><span class="k">Callsign</span><span>${a.cs || '—'}</span></div>
+    <div class="rr"><span class="k">Position</span><span>${isNaN(a.lat) ? '—' : a.lat.toFixed(4)}, ${isNaN(a.lon) ? '—' : a.lon.toFixed(4)}</span></div>
+    <div class="rr"><span class="k">Altitude</span><span>${isNaN(a.alt) ? '—' : a.alt.toLocaleString() + ' ft'}</span></div>
+    <div class="rr"><span class="k">Speed</span><span>${isNaN(a.vel) ? '—' : a.vel + ' kts'}</span></div>
+    ${reasons.length
+      ? `<div class="rr" style="flex-direction:column;gap:5px"><span class="k">Detection reasons</span>${reasons.map(r => '<span style="color:#ef4444;font-size:13px">▸ ' + r + '</span>').join('')}</div>`
+      : '<div class="rr"><span class="k">Detection reasons</span><span style="color:#22c55e">No anomalies detected</span></div>'}`;
+}
+
+// ── WebSocket ────────────────────────────────────────────────
+let wsConn = null;
+function connectWS() {
+  setWS('connecting');
+  wsConn = new WebSocket(WS_URL);
+  wsConn.binaryType = 'arraybuffer';
+  wsConn.onopen    = () => setWS('connected');
+  wsConn.onmessage = e => {
+    try {
+      const t = e.data instanceof ArrayBuffer ? new TextDecoder().decode(e.data) : e.data;
+      if (t === 'ping') { wsConn.send('pong'); return; }
+      const m = JSON.parse(t);
+      if (m.type === 'snapshot' && m.aircraft) {
+        renderAircraft(m.aircraft);
+        updateEDA(m.aircraft);
+        setBanner(m.aircraft.length);
+      }
+    } catch (err) {}
+  };
+  wsConn.onclose = () => { setWS('disconnected'); setTimeout(connectWS, 3000); };
+  wsConn.onerror = () => setWS('disconnected');
+}
+
+async function pollREST() {
+  try {
+    const r = await fetch(API + '/api/aircraft?limit=5000');
+    const d = await r.json();
+    if (d.aircraft) { renderAircraft(d.aircraft); updateEDA(d.aircraft); setBanner(d.aircraft.length); }
+  } catch (e) {}
+  setTimeout(pollREST, 6000);
+}
+
+function setWS(s) {
+  document.getElementById('wsd').className   = 'wsd ' + s;
+  document.getElementById('wslbl').textContent = { connected:'Live', connecting:'Connecting…', disconnected:'Disconnected' }[s];
+}
+
+function setBanner(n) {
+  const b = document.getElementById('banner');
+  b.className = 'banner green';
+  b.textContent = '✓  Loaded ' + n.toLocaleString() + ' aircraft (adsb.lol + adsb.fi + airplanes.live)';
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tc').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.querySelectorAll('.tab')[{map:0,eda:1,manual:2}[name]].classList.add('active');
+  if (name === 'map') setTimeout(() => map.invalidateSize(), 50);
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  initMap();
+  connectWS();
+  setTimeout(() => { if (document.getElementById('wslbl').textContent !== 'Live') pollREST(); }, 5000);
+});
+</script>
+</body>
+</html>
