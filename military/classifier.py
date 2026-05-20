@@ -26,6 +26,7 @@ from __future__ import annotations
 import math
 import logging
 from dataclasses import dataclass
+from dataclasses import dataclass
 from typing import Optional, List, Dict, Tuple
 
 import sys, os
@@ -282,7 +283,7 @@ class FormationDetector:
 
     def __init__(self, redis_client) -> None:
         self.redis = redis_client
-        self._formation_groups: Dict[str, List[str]] = {}  # leader_icao → member ICAOs
+        self._formation_groups: Dict[str, List[str]] = {}  # leader_icao → member ICAOs 
 
     async def scan(self) -> List[List[str]]:
         """
@@ -293,9 +294,8 @@ class FormationDetector:
 
         # Fetch all active state vectors from Redis
         keys = await self.redis.keys("sv:*")
-        if not keys:
+        if not keys: 
             return []
-
         pipe = self.redis.pipeline()
         for k in keys:
             pipe.get(k)

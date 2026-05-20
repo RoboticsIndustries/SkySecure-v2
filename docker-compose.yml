@@ -74,7 +74,7 @@ services:
     environment:
       KAFKA_BOOTSTRAP: kafka:29092
       REDIS_URL: redis://redis:6379/0
-      ADSB_SOURCE: opensky          # opensky | beast | dump1090
+      ADSB_SOURCE: multi            # multi | opensky | beast | dump1090
       OPENSKY_USERNAME: ""
       OPENSKY_PASSWORD: ""
     depends_on: [kafka, redis]
