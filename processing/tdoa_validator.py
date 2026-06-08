@@ -218,21 +218,23 @@ class TDOAValidator:
             errors[rid] = distance_error
             max_error_meters = max(max_error_meters, distance_error)
         
-        # Determine verdict
+   # Determine verdict
         is_valid = max_error_meters < self.detection_threshold
         
         if max_error_meters < 100:
             verdict = "LEGITIMATE"
-            confidence = 0.99
+            # Confidence varies with error magnitude within this range
+            confidence = max(0.95, 1.0 - (max_error_meters / 100.0) * 0.05)
         elif max_error_meters < self.detection_threshold:
             verdict = "LEGITIMATE"
-            confidence = 0.95
+            # Confidence decreases as error increases toward threshold
+            confidence = max(0.90, 1.0 - (max_error_meters / self.detection_threshold) * 0.10)
         elif max_error_meters < 2000:
             verdict = "UNCERTAIN"
-            confidence = 0.50
+            confidence = max(0.50, 1.0 - (max_error_meters / 2000.0) * 0.50)
         else:
             verdict = "SPOOFED"
-            confidence = 1.0 - (500 / max_error_meters)
+            confidence = max(0.0, 1.0 - (500 / max_error_meters))
         
         return TDOAValidationResult(
             icao=icao,
