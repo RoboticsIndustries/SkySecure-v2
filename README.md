@@ -112,6 +112,7 @@ SkySecure is designed to be that system.
 
 This project is in active research and development. If you're working on ADS-B security, SDR signal processing, or aviation cybersecurity and want to collaborate, open an issue or reach out directly.
 
+
 ---
 
 ## License
