@@ -1,115 +1,122 @@
-# SkySecure V2 — Global Airspace Intelligence Platform
+# SkySecure v2
 
-Real-time, security-focused airspace awareness system combining ADS-B, MLAT,
-and ACARS data into a unified threat-scored live map.
+**ADS-B Aviation Cybersecurity Platform — Spoofing Detection & Signal Authentication**
+
+[![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Backend-green?logo=fastapi)](https://fastapi.tiangolo.com)
+[![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
+[![Status](https://img.shields.io/badge/Status-Active%20Development-orange)]()
+
+---
+
+## Overview
+
+SkySecure v2 is a modular aviation cybersecurity platform targeting the growing threat of ADS-B signal spoofing. ADS-B (Automatic Dependent Surveillance–Broadcast) is the backbone of modern air traffic surveillance — but it transmits unauthenticated, unencrypted signals that any low-cost SDR can forge. SkySecure addresses this gap with a layered, real-time detection stack built on passive signal analysis.
+
+The platform is validated against live aircraft data from OpenSky Network and designed to scale from a research prototype to a multi-receiver hardware deployment.
+
+---
+
+## Key Features
+
+- **TDOA Spoofing Detection** — Time Difference of Arrival analysis flags position inconsistencies across receivers that a spoofed signal cannot physically satisfy
+- **Simulation Environment** — Fully configurable spoofing and legitimate flight simulations for offline testing and algorithm development
+- **FastAPI Backend** — Clean REST API exposing detection results, aircraft state, and alert streams
+- **OpenSky Integration** — Live validation against real ADS-B traffic from the OpenSky Network
+- **Modular Architecture** — Detection layers are independently versioned and pluggable; the platform is built to expand
+
+---
+
+## Detection Roadmap
+
+| Layer | Method | Status |
+|---|---|---|
+| v1 | TDOA Position Consistency | ✅ Complete |
+| v2 | ACARS Message Anomaly Detection | 🔧 In Development (Target: Aug 2026) |
+| v3 | ML-Based Trajectory Fingerprinting | 📋 Planned |
+| v4 | Multi-Receiver Sensor Fusion | 📋 Planned |
+
+---
 
 ## Architecture
 
 ```
-SDR Receivers / OpenSky API
-         │
-    [ADS-B Ingestor]
-         │
-    [Kafka: raw.adsb]
-         │           ╲
-    [MLAT Solver]   [Fusion Engine] ──→ [Kafka: fused.tracks]
-         │           /                          │
-    [Kafka: raw.mlat]               [Anomaly Detector]
-                                               │
-                                    [Military Classifier]
-                                               │
-                                    [FastAPI + WebSocket]
-                                               │
-                                    [React Radar Frontend]
+SkySecure-v2/
+├── api/                   # FastAPI application & route handlers
+│   └── main.py
+├── detection/             # Detection layer modules
+│   ├── tdoa.py            # TDOA spoofing detection (v1)
+│   └── acars.py           # ACARS anomaly detection (v2, WIP)
+├── simulation/            # Spoofing + legitimate flight simulators
+│   ├── spoof_sim.py
+│   └── flight_sim.py
+├── data/                  # OpenSky integration & data pipeline
+│   └── opensky_feed.py
+├── tests/                 # Unit and integration tests
+└── README.md
 ```
 
-## Quick Start
+---
+
+## Quickstart
 
 ### Prerequisites
-- Docker + Docker Compose
-- (Optional) RTL-SDR dongle + dump1090 for local reception
 
-### Run with OpenSky (no hardware needed)
+- Python 3.10+
+- An OpenSky Network account (free) for live data feeds
+
+### Installation
+
 ```bash
-git clone <repo>
-cd skysecure-v2
-cp .env.example .env
-docker-compose up -d
+git clone https://github.com/RoboticsIndustries/SkySecure-v2.git
+cd SkySecure-v2
+pip install -r requirements.txt
 ```
 
-Open http://localhost:3000
+### Run the API
 
-### Run with local SDR
 ```bash
-# Install dump1090
-sudo apt install dump1090-mutability
-
-# Start dump1090
-dump1090 --net --net-beast
-
-# Update .env
-ADSB_SOURCE=beast
-DUMP1090_HOST=localhost
-
-docker-compose up -d
+uvicorn api.main:app --reload
 ```
 
-## Services
+The API will be available at `http://localhost:8000`. Interactive docs at `/docs`.
 
-| Service | Port | Description |
-|---------|------|-------------|
-| Frontend | 3000 | React radar map |
-| API | 8000 | REST + WebSocket |
-| Kafka | 9092 | Message bus |
-| Redis | 6379 | State store |
-| Postgres | 5432 | Persistent store |
+### Run Simulations
 
-## API
+```bash
+# Simulate a spoofing scenario
+python simulation/spoof_sim.py
 
-```
-GET  /api/aircraft              All live tracks
-GET  /api/aircraft/{icao}       Single aircraft detail
-GET  /api/alerts                Active anomaly alerts
-GET  /api/stats                 System statistics
-WS   /ws/tracks                 Real-time broadcast
+# Simulate legitimate traffic
+python simulation/flight_sim.py
 ```
 
-## Detection Capabilities
+---
 
-| Capability | Method |
-|-----------|--------|
-| Civil aircraft | ADS-B decode |
-| GNSS spoofing | Baro/Geo altitude delta, position conflict |
-| Identity spoofing | Duplicate ICAO detection |
-| Ghost aircraft | ADS-B without MLAT confirmation |
-| Silent aircraft | MLAT-only tracks |
-| Military aircraft | ICAO block + behavioral scoring |
-| Formation flying | Multi-track proximity analysis |
-| Transponder off | Signal loss detection |
-| Anomalous trajectory | LSTM prediction error |
+## Live Validation
 
-## Project Structure
+SkySecure v2 has been validated against real OpenSky Network aircraft data. The TDOA detection layer runs against live ADS-B feeds and flags statistically anomalous position reports in real time. Production metrics and detection performance benchmarks are documented in [`/results`](results/).
 
-```
-skysecure-v2/
-├── models.py              Core data models (StateVector, etc.)
-├── config.py              All configuration
-├── docker-compose.yml     Full stack orchestration
-├── ingestion/
-│   └── adsb_receiver.py   OpenSky / SBS / Beast sources
-├── processing/
-│   ├── mlat_solver.py     TDOA-based position solver
-│   └── fusion_engine.py   Multi-source data fusion + Kalman
-├── anomaly/
-│   └── detector.py        3-layer anomaly detection
-├── military/
-│   └── classifier.py      P(military) scoring
-├── api/
-│   └── main.py            FastAPI REST + WebSocket
-└── frontend/
-    └── src/
-        ├── App.jsx         Radar map UI
-        ├── hooks/          WebSocket client
-        └── store/          Zustand state
-```
-# SkySecure-v2
+---
+
+## Why ADS-B Security Matters
+
+ADS-B mandates took effect in the US (2020) and are rolling out globally. Every commercial and private aircraft now broadcasts position, altitude, velocity, and identity — unencrypted and unauthenticated — on 1090 MHz. Spoofed ADS-B signals have been demonstrated in conflict zones (Ukraine, GPS jamming corridors near Iran/Iraq) and at civilian airports. Today there is no deployed, real-time system to detect these attacks at the receiver level.
+
+SkySecure is designed to be that system.
+
+---
+
+## Contributing
+
+This project is in active research and development. If you're working on ADS-B security, SDR signal processing, or aviation cybersecurity and want to collaborate, open an issue or reach out directly.
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.
+
+---
+
+*Built by Aryan — CAP Chief Master Sergeant, Brandywine Cadet Squadron | JSHS 2026 Competitor*
